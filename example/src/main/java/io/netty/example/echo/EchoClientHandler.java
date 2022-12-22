@@ -17,8 +17,10 @@ package io.netty.example.echo;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.util.CharsetUtil;
 
 /**
  * Handler implementation for the echo client.  It initiates the ping-pong
@@ -33,25 +35,30 @@ public class EchoClientHandler extends ChannelInboundHandlerAdapter {
      * Creates a client-side handler.
      */
     public EchoClientHandler() {
-        firstMessage = Unpooled.buffer(EchoClient.SIZE);
-        for (int i = 0; i < firstMessage.capacity(); i ++) {
-            firstMessage.writeByte((byte) i);
-        }
+        firstMessage = Unpooled.copiedBuffer("hello i am client", CharsetUtil.UTF_8);
+//        firstMessage = Unpooled.buffer(EchoClient.SIZE);
+//        for (int i = 0; i < firstMessage.capacity(); i ++) {
+//            firstMessage.writeByte((byte) i);
+//        }
     }
 
+    // 通道就绪时触发
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
-        ctx.writeAndFlush(firstMessage);
+        ChannelFuture channelFuture = ctx.writeAndFlush(firstMessage);
     }
 
+    // 通道可读时触发
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
-        ctx.write(msg);
+//        ctx.write(msg);
+        System.out.println("客户端收到消息：" + ((ByteBuf) msg).toString(CharsetUtil.UTF_8));
     }
 
+    // 读取完成时触发
     @Override
     public void channelReadComplete(ChannelHandlerContext ctx) {
-       ctx.flush();
+        ctx.flush();
     }
 
     @Override

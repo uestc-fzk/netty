@@ -20,6 +20,7 @@ import io.netty.util.internal.PlatformDependent;
 
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
+
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Inherited;
 import java.lang.annotation.Retention;
@@ -31,7 +32,7 @@ import java.security.AccessController;
 import java.security.PrivilegedExceptionAction;
 import java.util.Map;
 import java.util.WeakHashMap;
-
+// 入站和出站的执行掩码，这种以掩码方式快速计算某个方法是否拦截执行的方式值得学习
 final class ChannelHandlerMask {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(ChannelHandlerMask.class);
 
@@ -53,12 +54,13 @@ final class ChannelHandlerMask {
     static final int MASK_READ = 1 << 14;
     static final int MASK_WRITE = 1 << 15;
     static final int MASK_FLUSH = 1 << 16;
-
-    static final int MASK_ONLY_INBOUND =  MASK_CHANNEL_REGISTERED |
+    // 所有入站事件掩码
+    static final int MASK_ONLY_INBOUND = MASK_CHANNEL_REGISTERED |
             MASK_CHANNEL_UNREGISTERED | MASK_CHANNEL_ACTIVE | MASK_CHANNEL_INACTIVE | MASK_CHANNEL_READ |
             MASK_CHANNEL_READ_COMPLETE | MASK_USER_EVENT_TRIGGERED | MASK_CHANNEL_WRITABILITY_CHANGED;
     private static final int MASK_ALL_INBOUND = MASK_EXCEPTION_CAUGHT | MASK_ONLY_INBOUND;
-    static final int MASK_ONLY_OUTBOUND =  MASK_BIND | MASK_CONNECT | MASK_DISCONNECT |
+    // 所有出站事件掩码
+    static final int MASK_ONLY_OUTBOUND = MASK_BIND | MASK_CONNECT | MASK_DISCONNECT |
             MASK_CLOSE | MASK_DEREGISTER | MASK_READ | MASK_WRITE | MASK_FLUSH;
     private static final int MASK_ALL_OUTBOUND = MASK_EXCEPTION_CAUGHT | MASK_ONLY_OUTBOUND;
 
@@ -87,6 +89,7 @@ final class ChannelHandlerMask {
 
     /**
      * Calculate the {@code executionMask}.
+     * 这种以掩码方式快速计算某个方法是否拦截执行的方式值得学习
      */
     private static int mask0(Class<? extends ChannelHandler> handlerType) {
         int mask = MASK_EXCEPTION_CAUGHT;
@@ -175,7 +178,7 @@ final class ChannelHandlerMask {
                 } catch (NoSuchMethodException e) {
                     if (logger.isDebugEnabled()) {
                         logger.debug(
-                            "Class {} missing method {}, assume we can not skip execution", handlerType, methodName, e);
+                                "Class {} missing method {}, assume we can not skip execution", handlerType, methodName, e);
                     }
                     return false;
                 }

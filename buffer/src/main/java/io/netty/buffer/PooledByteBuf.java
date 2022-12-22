@@ -28,17 +28,26 @@ import java.nio.channels.ScatteringByteChannel;
 
 abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
 
+    // Recycler处理器，用于回收对象
     private final Handle<PooledByteBuf<T>> recyclerHandle;
 
-    protected PoolChunk<T> chunk;
-    protected long handle;
+    protected PoolChunk<T> chunk;// 在 Netty 中，使用 Jemalloc 算法管理内存，而 Chunk 是里面的一种内存块
+    protected long handle;// 从 Chunk 对象中分配的内存块所处的位置
+    /**
+     * 内存空间。具体什么样的数据，通过子类设置泛型。
+     * 1) PooledDirectByteBuf 和 PooledUnsafeDirectByteBuf 为 ByteBuffer ；
+     * 2) PooledHeapByteBuf 和 PooledUnsafeHeapByteBuf 为 byte[]
+     * memory 属性，可以被多个 ByteBuf 使用。每个 ByteBuf 使用范围为 [offset, maxLength)
+     */
     protected T memory;
-    protected int offset;
-    protected int length;
-    int maxLength;
+    protected int offset;// 使用 memory 的开始位置
+    protected int length;// 目前使用 memory 的长度(大小)
+    int maxLength;// 最大使用 memory 的长度(大小)
     PoolThreadCache cache;
+    // 临时ByteBuff，通过 #internalNioBuffer() 方法生成
+    // 作用：JavaNio相关的读写操作都是ByteBuffer，所以临时生成该对象用于与JavaNio的相关API交互
     ByteBuffer tmpNioBuf;
-    private ByteBufAllocator allocator;
+    private ByteBufAllocator allocator;// ByteBuf 分配器
 
     @SuppressWarnings("unchecked")
     protected PooledByteBuf(Handle<? extends PooledByteBuf<T>> recyclerHandle, int maxCapacity) {
@@ -46,11 +55,13 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
         this.recyclerHandle = (Handle<PooledByteBuf<T>>) recyclerHandle;
     }
 
+    // 一般是基于 pooled 的 PoolChunk 对象，初始化 PooledByteBuf 对象
     void init(PoolChunk<T> chunk, ByteBuffer nioBuffer,
               long handle, int offset, int length, int maxLength, PoolThreadCache cache) {
         init0(chunk, nioBuffer, handle, offset, length, maxLength, cache);
     }
 
+    // 基于 unPoolooled 的 PoolChunk 对象，初始化 PooledByteBuf 对象
     void initUnpooled(PoolChunk<T> chunk, int length) {
         init0(chunk, null, 0, 0, length, length, null);
     }
@@ -59,7 +70,7 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
                        long handle, int offset, int length, int maxLength, PoolThreadCache cache) {
         assert handle >= 0;
         assert chunk != null;
-        assert !PoolChunk.isSubpage(handle) || chunk.arena.size2SizeIdx(maxLength) <= chunk.arena.smallMaxSizeIdx:
+        assert !PoolChunk.isSubpage(handle) || chunk.arena.size2SizeIdx(maxLength) <= chunk.arena.smallMaxSizeIdx :
                 "Allocated small sub-page handle for a buffer size that isn't \"small.\"";
 
         chunk.incrementPinnedMemory(maxLength);
@@ -79,11 +90,17 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
      */
     final void reuse(int maxCapacity) {
         maxCapacity(maxCapacity);
-        resetRefCnt();
-        setIndex0(0, 0);
-        discardMarks();
+        resetRefCnt();// 重置引用计数为0
+        setIndex0(0, 0);// 重置读写索引为0
+        discardMarks();// 重置读写标记位为0
     }
 
+    /**
+     * 当前容量的值为 length 属性
+     * maxLength 属性，不是表示最大容量。maxCapacity 属性，才是真正表示最大容量。
+     * maxLength 属性有什么用？表示占用 memory 的最大容量( 而不是 PooledByteBuf 对象的最大容量 )。
+     * 在写入数据超过 maxLength 容量时，会进行扩容，但是容量的上限，为 maxCapacity 。
+     */
     @Override
     public final int capacity() {
         return length;
@@ -101,6 +118,7 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
             return this;
         }
         checkNewCapacity(newCapacity);
+        // Chunk内存池化，如果要求的新容量未超过memory的最大容量maxLength就无须扩容
         if (!chunk.unpooled) {
             // If the request capacity does not require reallocation, just update the length of the memory.
             if (newCapacity > length) {
@@ -117,6 +135,7 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
             }
         }
 
+        // 重新分配新的内存空间，并将数据复制到其中，并释放老的内存空间。
         // Reallocation required.
         chunk.decrementPinnedMemory(maxLength);
         chunk.arena.reallocate(this, newCapacity, true);
@@ -166,16 +185,20 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
 
     protected abstract ByteBuffer newInternalNioBuffer(T memory);
 
+    // 当引用计数为 0 时，调用该方法，进行内存回收
     @Override
     protected final void deallocate() {
         if (handle >= 0) {
+            // 重置属性
             final long handle = this.handle;
             this.handle = -1;
             memory = null;
+            // 释放内存回 Arena 中
             chunk.decrementPinnedMemory(maxLength);
             chunk.arena.free(chunk, tmpNioBuf, handle, maxLength, cache);
             tmpNioBuf = null;
             chunk = null;
+            // 回收对象
             recycle();
         }
     }
@@ -184,6 +207,7 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
         recyclerHandle.recycle(this);
     }
 
+    // 获取指定位置在memory变量中的位置
     protected final int idx(int index) {
         return offset + index;
     }
@@ -218,7 +242,7 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
 
     @Override
     public final ByteBuffer[] nioBuffers(int index, int length) {
-        return new ByteBuffer[] { nioBuffer(index, length) };
+        return new ByteBuffer[]{nioBuffer(index, length)};
     }
 
     @Override

@@ -35,7 +35,7 @@ import static io.netty.handler.codec.http.HttpHeaderValues.TEXT_PLAIN;
 import static io.netty.handler.codec.http.HttpResponseStatus.OK;
 
 public class HttpHelloWorldServerHandler extends SimpleChannelInboundHandler<HttpObject> {
-    private static final byte[] CONTENT = { 'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd' };
+    private static final byte[] CONTENT = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd'};
 
     @Override
     public void channelReadComplete(ChannelHandlerContext ctx) {
@@ -47,9 +47,15 @@ public class HttpHelloWorldServerHandler extends SimpleChannelInboundHandler<Htt
         if (msg instanceof HttpRequest) {
             HttpRequest req = (HttpRequest) msg;
 
+            System.out.printf("收到客户端：%s 的HTTP请求\n", ctx.channel().remoteAddress());
+            if("/favicon.ico".equals(req.uri())){
+                System.out.println("请求了favicon.ico");
+            }
+
+            // 构造响应并输出
             boolean keepAlive = HttpUtil.isKeepAlive(req);
             FullHttpResponse response = new DefaultFullHttpResponse(req.protocolVersion(), OK,
-                                                                    Unpooled.wrappedBuffer(CONTENT));
+                    Unpooled.wrappedBuffer(CONTENT));
             response.headers()
                     .set(CONTENT_TYPE, TEXT_PLAIN)
                     .setInt(CONTENT_LENGTH, response.content().readableBytes());

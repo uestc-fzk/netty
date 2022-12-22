@@ -69,30 +69,32 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
         }
     };
 
+    // state字段原子更新器
     private static final AtomicIntegerFieldUpdater<SingleThreadEventExecutor> STATE_UPDATER =
             AtomicIntegerFieldUpdater.newUpdater(SingleThreadEventExecutor.class, "state");
+    // threadProperties字段原子更新器
     private static final AtomicReferenceFieldUpdater<SingleThreadEventExecutor, ThreadProperties> PROPERTIES_UPDATER =
             AtomicReferenceFieldUpdater.newUpdater(
                     SingleThreadEventExecutor.class, ThreadProperties.class, "threadProperties");
 
-    private final Queue<Runnable> taskQueue;
+    private final Queue<Runnable> taskQueue;// 任务队列
 
-    private volatile Thread thread;
+    private volatile Thread thread;// 记录当前EventLoop的执行线程
     @SuppressWarnings("unused")
     private volatile ThreadProperties threadProperties;
-    private final Executor executor;
+    private final Executor executor;// 执行器线程池
     private volatile boolean interrupted;
 
     private final CountDownLatch threadLock = new CountDownLatch(1);
     private final Set<Runnable> shutdownHooks = new LinkedHashSet<Runnable>();
-    private final boolean addTaskWakesUp;
-    private final int maxPendingTasks;
-    private final RejectedExecutionHandler rejectedExecutionHandler;
+    private final boolean addTaskWakesUp;// 添加任务时是否唤醒线程
+    private final int maxPendingTasks;// 最大等待执行任务数量，即 taskQueue 队列大小
+    private final RejectedExecutionHandler rejectedExecutionHandler;// 拒绝策略
 
-    private long lastExecutionTime;
+    private long lastExecutionTime;// 最后执行时间
 
     @SuppressWarnings({ "FieldMayBeFinal", "unused" })
-    private volatile int state = ST_NOT_STARTED;
+    private volatile int state = ST_NOT_STARTED;// 当前状态
 
     private volatile long gracefulShutdownQuietPeriod;
     private volatile long gracefulShutdownTimeout;
@@ -456,7 +458,9 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
      * the tasks in the task queue and returns if it ran longer than {@code timeoutNanos}.
      */
     protected boolean runAllTasks(long timeoutNanos) {
+        // 1.将已到达的定时任务放入taskQueue中
         fetchFromScheduledTaskQueue();
+        // 2.从taskQueue中取出1个任务
         Runnable task = pollTask();
         if (task == null) {
             afterRunningAllTasks();
@@ -467,10 +471,13 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
         long runTasks = 0;
         long lastExecutionTime;
         for (;;) {
+            // 3.安全的执行任务，即出现异常仅日志提醒
             safeExecute(task);
 
             runTasks ++;
 
+            // 4.每64个任务检查1次超时，因为nanoTime()调用比较昂贵
+            // 目前是硬编码，如果它真会出现问题的话会考虑将其设为可配置
             // Check timeout every 64 tasks because nanoTime() is relatively expensive.
             // XXX: Hard-coded value - will make it configurable if it is really a problem.
             if ((runTasks & 0x3F) == 0) {
@@ -486,7 +493,8 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
                 break;
             }
         }
-
+        // 5.任务执行时间完成回调
+        // 目前的实现是执行tailQueue中所有任务
         afterRunningAllTasks();
         this.lastExecutionTime = lastExecutionTime;
         return true;

@@ -433,6 +433,7 @@ final class UnsafeByteBufUtil {
 
     static ByteBuf copy(AbstractByteBuf buf, long addr, int index, int length) {
         buf.checkIndex(index, length);
+        // 创建 Direct ByteBuffer 对象
         ByteBuf copy = buf.alloc().directBuffer(length, buf.maxCapacity());
         if (length != 0) {
             if (copy.hasMemoryAddress()) {

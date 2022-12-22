@@ -25,7 +25,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
-
+// 基于 ByteBuffer + Unsafe 的可重用 ByteBuf 实现类。所以，泛型 T 为 ByteBuffer
 final class PooledUnsafeDirectByteBuf extends PooledByteBuf<ByteBuffer> {
     private static final ObjectPool<PooledUnsafeDirectByteBuf> RECYCLER = ObjectPool.newPool(
             new ObjectCreator<PooledUnsafeDirectByteBuf>() {
@@ -36,7 +36,9 @@ final class PooledUnsafeDirectByteBuf extends PooledByteBuf<ByteBuffer> {
     });
 
     static PooledUnsafeDirectByteBuf newInstance(int maxCapacity) {
+        // 从Recycler对象池中获得PooledDirect
         PooledUnsafeDirectByteBuf buf = RECYCLER.get();
+        // 重置该缓存对象
         buf.reuse(maxCapacity);
         return buf;
     }
@@ -51,6 +53,7 @@ final class PooledUnsafeDirectByteBuf extends PooledByteBuf<ByteBuffer> {
     void init(PoolChunk<ByteBuffer> chunk, ByteBuffer nioBuffer,
               long handle, int offset, int length, int maxLength, PoolThreadCache cache) {
         super.init(chunk, nioBuffer, handle, offset, length, maxLength, cache);
+        // 初始化内存地址：将ByteBuffer兑现的起始内存地址设置奥memoryAddress
         initMemoryAddress();
     }
 

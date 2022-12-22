@@ -61,9 +61,9 @@ import static io.netty.channel.ChannelHandlerMask.mask;
 abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, ResourceLeakHint {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractChannelHandlerContext.class);
-    volatile AbstractChannelHandlerContext next;
-    volatile AbstractChannelHandlerContext prev;
-
+    volatile AbstractChannelHandlerContext next;// 上一个节点
+    volatile AbstractChannelHandlerContext prev;// 下一个节点
+    // 处理器状态handlerState的原子更新器
     private static final AtomicIntegerFieldUpdater<AbstractChannelHandlerContext> HANDLER_STATE_UPDATER =
             AtomicIntegerFieldUpdater.newUpdater(AbstractChannelHandlerContext.class, "handlerState");
 
@@ -85,9 +85,10 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
      */
     private static final int INIT = 0;
 
-    private final DefaultChannelPipeline pipeline;
+    private final DefaultChannelPipeline pipeline;// 所属pipeline
     private final String name;
     private final boolean ordered;
+    // 此context的执行码，可用于快速判断入站和出站各个事件拦截
     private final int executionMask;
 
     // Will be set to null if no child executor should be used, otherwise it will be set to the
@@ -99,7 +100,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
     // There is no need to make this volatile as at worse it will just create a few more instances then needed.
     private Tasks invokeTasks;
 
-    private volatile int handlerState = INIT;
+    private volatile int handlerState = INIT;// 处理器状态
 
     AbstractChannelHandlerContext(DefaultChannelPipeline pipeline, EventExecutor executor,
                                   String name, Class<? extends ChannelHandler> handlerClass) {
@@ -347,15 +348,15 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
             } catch (Throwable error) {
                 if (logger.isDebugEnabled()) {
                     logger.debug(
-                        "An exception {}" +
-                        "was thrown by a user handler's exceptionCaught() " +
-                        "method while handling the following exception:",
-                        ThrowableUtil.stackTraceToString(error), cause);
+                            "An exception {}" +
+                                    "was thrown by a user handler's exceptionCaught() " +
+                                    "method while handling the following exception:",
+                            ThrowableUtil.stackTraceToString(error), cause);
                 } else if (logger.isWarnEnabled()) {
                     logger.warn(
-                        "An exception '{}' [enable DEBUG level for full stacktrace] " +
-                        "was thrown by a user handler's exceptionCaught() " +
-                        "method while handling the following exception:", error, cause);
+                            "An exception '{}' [enable DEBUG level for full stacktrace] " +
+                                    "was thrown by a user handler's exceptionCaught() " +
+                                    "method while handling the following exception:", error, cause);
                 }
             }
         } else {
@@ -573,8 +574,10 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
             return promise;
         }
 
+        // 获得下一个outbound节点
         final AbstractChannelHandlerContext next = findContextOutbound(MASK_BIND);
         EventExecutor executor = next.executor();
+        // 调用下一个outbound节点的bind()方法
         if (executor.inEventLoop()) {
             next.invokeBind(localAddress, promise);
         } else {
@@ -594,6 +597,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
                 // DON'T CHANGE
                 // Duplex handlers implements both out/in interfaces causing a scalability issue
                 // see https://bugs.openjdk.org/browse/JDK-8180450
+                // 获取本context保存的handler
                 final ChannelHandler handler = handler();
                 final DefaultChannelPipeline.HeadContext headContext = pipeline.head;
                 if (handler == headContext) {
@@ -1088,7 +1092,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
     }
 
     final boolean setAddComplete() {
-        for (;;) {
+        for (; ; ) {
             int oldState = handlerState;
             if (oldState == REMOVE_COMPLETE) {
                 return false;
@@ -1130,7 +1134,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
     /**
      * Makes best possible effort to detect if {@link ChannelHandler#handlerAdded(ChannelHandlerContext)} was called
      * yet. If not return {@code false} and if called or could not detect return {@code true}.
-     *
+     * <p>
      * If this method returns {@code false} we will not invoke the {@link ChannelHandler} but just forward the event.
      * This is needed as {@link DefaultChannelPipeline} may already put the {@link ChannelHandler} in the linked-list
      * but not called {@link ChannelHandler#handlerAdded(ChannelHandlerContext)}.
@@ -1157,7 +1161,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
     }
 
     private static boolean safeExecute(EventExecutor executor, Runnable runnable,
-            ChannelPromise promise, Object msg, boolean lazy) {
+                                       ChannelPromise promise, Object msg, boolean lazy) {
         try {
             if (lazy && executor instanceof AbstractEventExecutor) {
                 ((AbstractEventExecutor) executor).lazyExecute(runnable);
@@ -1196,7 +1200,7 @@ abstract class AbstractChannelHandlerContext implements ChannelHandlerContext, R
         });
 
         static WriteTask newInstance(AbstractChannelHandlerContext ctx,
-                Object msg, ChannelPromise promise, boolean flush) {
+                                     Object msg, ChannelPromise promise, boolean flush) {
             WriteTask task = RECYCLER.get();
             init(task, ctx, msg, promise, flush);
             return task;

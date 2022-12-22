@@ -15,9 +15,14 @@
  */
 package io.netty.example.echo;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.util.CharsetUtil;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * Handler implementation for the echo server.
@@ -26,8 +31,26 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 public class EchoServerHandler extends ChannelInboundHandlerAdapter {
 
     @Override
-    public void channelRead(ChannelHandlerContext ctx, Object msg) {
-        ctx.write(msg);
+    public void channelRead(final ChannelHandlerContext ctx, Object msg) {
+        ByteBuf buf = (ByteBuf) msg;
+        System.out.printf("服务端收到来自 %s 消息 %s\n", ctx.channel().remoteAddress(), buf.toString(CharsetUtil.UTF_8));
+        if ("ping".equals(buf.toString(CharsetUtil.UTF_8))) {
+            // 1.自定义普通任务放入Worker线程池
+            ctx.channel().eventLoop().execute(new Runnable() {
+                @Override
+                public void run() {
+                    ctx.writeAndFlush(Unpooled.copiedBuffer("pong", CharsetUtil.UTF_8));
+                }
+            });
+
+            // 2.自定义定时任务放入Worker线程池
+            ctx.channel().eventLoop().schedule(new Runnable() {
+                @Override
+                public void run() {
+                    ctx.writeAndFlush(Unpooled.copiedBuffer("pong", CharsetUtil.UTF_8));
+                }
+            }, 1, TimeUnit.SECONDS);
+        }
     }
 
     @Override

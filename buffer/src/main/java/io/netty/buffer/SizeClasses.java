@@ -18,65 +18,59 @@ package io.netty.buffer;
 import static io.netty.buffer.PoolThreadCache.*;
 
 /**
- * SizeClasses requires {@code pageShifts} to be defined prior to inclusion,
- * and it in turn defines:
+ * Netty的内存对齐类，为Netty内存池中的内存块提供大小对齐，索引计算等服务方法。
  * <p>
- *   LOG2_SIZE_CLASS_GROUP: Log of size class count for each size doubling.
- *   LOG2_MAX_LOOKUP_SIZE: Log of max size class in the lookup table.
- *   sizeClasses: Complete table of [index, log2Group, log2Delta, nDelta, isMultiPageSize,
- *                 isSubPage, log2DeltaLookup] tuples.
- *     index: Size class index.
- *     log2Group: Log of group base size (no deltas added).
- *     log2Delta: Log of delta to previous size class.
- *     nDelta: Delta multiplier.
- *     isMultiPageSize: 'yes' if a multiple of the page size, 'no' otherwise.
- *     isSubPage: 'yes' if a subpage size class, 'no' otherwise.
- *     log2DeltaLookup: Same as log2Delta if a lookup table size class, 'no'
- *                      otherwise.
+ * LOG2_SIZE_CLASS_GROUP: 每次大小加倍时，size类计数的对数。值为：2
+ * LOG2_MAX_LOOKUP_SIZE: Log of max size class in the lookup table.
+ * sizeClasses: Complete table of [index, log2Group, log2Delta, nDelta, isMultiPageSize,
+ * isSubPage, log2DeltaLookup] tuples.
+ * index: 内存块size的索引
+ * log2Group: 内存块分组
+ * log2Delta: 增量大小的log2值.
+ * nDelta: 增量乘数.
+ * isMultiPageSize: 表示size是否为pageSize的整数.
+ * isSubPage: 是否为subpage类型
+ * log2DeltaLookup: Same as log2Delta if a lookup table size class, 'no'
+ * otherwise.
  * <p>
- *   nSubpages: Number of subpages size classes.
- *   nSizes: Number of size classes.
- *   nPSizes: Number of size classes that are multiples of pageSize.
- *
- *   smallMaxSizeIdx: Maximum small size class index.
- *
- *   lookupMaxClass: Maximum size class included in lookup table.
- *   log2NormalMinClass: Log of minimum normal size class.
+ * nSubpages: subPage sizeClass的数量.
+ * nSizes: sizeClass个数.
+ * nPSizes: size为pageSize整数倍的sizeClass的个数.
  * <p>
- *   The first size class and spacing are 1 << LOG2_QUANTUM.
- *   Each group has 1 << LOG2_SIZE_CLASS_GROUP of size classes.
- *
- *   size = 1 << log2Group + nDelta * (1 << log2Delta)
- *
- *   The first size class has an unusual encoding, because the size has to be
- *   split between group and delta*nDelta.
- *
- *   If pageShift = 13, sizeClasses looks like this:
- *
- *   (index, log2Group, log2Delta, nDelta, isMultiPageSize, isSubPage, log2DeltaLookup)
+ * smallMaxSizeIdx: small规格内存的索引.
  * <p>
- *   ( 0,     4,        4,         0,       no,             yes,        4)
- *   ( 1,     4,        4,         1,       no,             yes,        4)
- *   ( 2,     4,        4,         2,       no,             yes,        4)
- *   ( 3,     4,        4,         3,       no,             yes,        4)
+ * lookupMaxClass: Maximum size class included in lookup table.
+ * log2NormalMinClass: Log of minimum normal size class.
  * <p>
- *   ( 4,     6,        4,         1,       no,             yes,        4)
- *   ( 5,     6,        4,         2,       no,             yes,        4)
- *   ( 6,     6,        4,         3,       no,             yes,        4)
- *   ( 7,     6,        4,         4,       no,             yes,        4)
+ * The first size class and spacing are 1 << LOG2_QUANTUM.
+ * Each group has 1 << LOG2_SIZE_CLASS_GROUP of size classes.
  * <p>
- *   ( 8,     7,        5,         1,       no,             yes,        5)
- *   ( 9,     7,        5,         2,       no,             yes,        5)
- *   ( 10,    7,        5,         3,       no,             yes,        5)
- *   ( 11,    7,        5,         4,       no,             yes,        5)
- *   ...
- *   ...
- *   ( 72,    23,       21,        1,       yes,            no,        no)
- *   ( 73,    23,       21,        2,       yes,            no,        no)
- *   ( 74,    23,       21,        3,       yes,            no,        no)
- *   ( 75,    23,       21,        4,       yes,            no,        no)
+ * If pageShift = 13, sizeClasses looks like this:
  * <p>
- *   ( 76,    24,       22,        1,       yes,            no,        no)
+ * (index, log2Group, log2Delta, nDelta, isMultiPageSize, isSubPage, log2DeltaLookup)
+ * <p>
+ * ( 0,     4,        4,         0,       no,             yes,        4)
+ * ( 1,     4,        4,         1,       no,             yes,        4)
+ * ( 2,     4,        4,         2,       no,             yes,        4)
+ * ( 3,     4,        4,         3,       no,             yes,        4)
+ * <p>
+ * ( 4,     6,        4,         1,       no,             yes,        4)
+ * ( 5,     6,        4,         2,       no,             yes,        4)
+ * ( 6,     6,        4,         3,       no,             yes,        4)
+ * ( 7,     6,        4,         4,       no,             yes,        4)
+ * <p>
+ * ( 8,     7,        5,         1,       no,             yes,        5)
+ * ( 9,     7,        5,         2,       no,             yes,        5)
+ * ( 10,    7,        5,         3,       no,             yes,        5)
+ * ( 11,    7,        5,         4,       no,             yes,        5)
+ * ...
+ * ...
+ * ( 72,    23,       21,        1,       yes,            no,        no)
+ * ( 73,    23,       21,        2,       yes,            no,        no)
+ * ( 74,    23,       21,        3,       yes,            no,        no)
+ * ( 75,    23,       21,        4,       yes,            no,        no)
+ * <p>
+ * ( 76,    24,       22,        1,       yes,            no,        no)
  */
 abstract class SizeClasses implements SizeClassesMetric {
 
@@ -95,30 +89,32 @@ abstract class SizeClasses implements SizeClassesMetric {
 
     private static final byte no = 0, yes = 1;
 
-    protected final int pageSize;
-    protected final int pageShifts;
-    protected final int chunkSize;
+    protected final int pageSize;// 默认8KB
+    protected final int pageShifts;// 默认13
+    protected final int chunkSize;// 默认4MB
     protected final int directMemoryCacheAlignment;
 
-    final int nSizes;
-    final int nSubpages;
-    final int nPSizes;
-    final int lookupMaxSize;
-    final int smallMaxSizeIdx;
+    final int nSizes;// 默认68
+    final int nSubpages;// 默认39
+    final int nPSizes;// 默认32
+    final int lookupMaxSize;// 4096
+    final int smallMaxSizeIdx;// 38
 
+    // 以下3个是查找表
+    // 保存的是isMultiPageSize为true的列的size
     private final int[] pageIdx2sizeTab;
 
-    // lookup table for sizeIdx <= smallMaxSizeIdx
+    // sizeIdx --> size
+    // 从16B...4MB 共68个
     private final int[] sizeIdx2sizeTab;
 
-    // lookup table used for size <= lookupMaxClass
-    // spacing is 1 << LOG2_QUANTUM, so the size of array is lookupMaxClass >> LOG2_QUANTUM
+    // size<=lookupMaxClass的查找表，可根据size快速查到sizeIdx，大于该值的只能计算得出sizeIdx了
     private final int[] size2idxTab;
 
     protected SizeClasses(int pageSize, int pageShifts, int chunkSize, int directMemoryCacheAlignment) {
-        int group = log2(chunkSize) + 1 - LOG2_QUANTUM;
+        int group = log2(chunkSize) + 1 - LOG2_QUANTUM;// 22+1-4
 
-        //generate size classes
+        // 生成 size classes 共19<<2=76条
         //[index, log2Group, log2Delta, nDelta, isMultiPageSize, isSubPage, log2DeltaLookup]
         short[][] sizeClasses = new short[group << LOG2_SIZE_CLASS_GROUP][7];
 
@@ -126,10 +122,11 @@ abstract class SizeClasses implements SizeClassesMetric {
         int nSizes = 0;
         int size = 0;
 
-        int log2Group = LOG2_QUANTUM;
-        int log2Delta = LOG2_QUANTUM;
-        int ndeltaLimit = 1 << LOG2_SIZE_CLASS_GROUP;
+        int log2Group = LOG2_QUANTUM;//4
+        int log2Delta = LOG2_QUANTUM;//4
+        int ndeltaLimit = 1 << LOG2_SIZE_CLASS_GROUP;//4
 
+        // 计算SizeClasses
         //First small group, nDelta start at 0.
         //first size class is 1 << LOG2_QUANTUM
         for (int nDelta = 0; nDelta < ndeltaLimit; nDelta++, nSizes++) {
@@ -180,10 +177,24 @@ abstract class SizeClasses implements SizeClassesMetric {
         this.chunkSize = chunkSize;
         this.directMemoryCacheAlignment = directMemoryCacheAlignment;
 
-        //generate lookup tables
+        // 生成查找表
         sizeIdx2sizeTab = newIdx2SizeTab(sizeClasses, nSizes, directMemoryCacheAlignment);
         pageIdx2sizeTab = newPageIdx2sizeTab(sizeClasses, nSizes, nPSizes, directMemoryCacheAlignment);
         size2idxTab = newSize2idxTab(lookupMaxSize, sizeClasses);
+
+
+
+        // 打印演示
+        System.out.println("|index |log2Group |log2Delta |nDelta |isMultiPageSize |isSubPage |log2DeltaLookup |size|");
+//        System.out.println("|--- |--- |--- |--- |--- |--- |--- |---|");
+        for (int i = 0; i < sizeClasses.length; i++) {
+            short[] sizeClass = sizeClasses[i];
+            System.out.printf("|%d\t\t |%d\t\t |%d\t\t\t |%d\t\t |%d\t\t\t\t |%d\t\t\t |%d\t\t\t|%d|\n",
+                    sizeClass[INDEX_IDX],sizeClass[LOG2GROUP_IDX],sizeClass[LOG2DELTA_IDX],
+                    sizeClass[NDELTA_IDX],sizeClass[PAGESIZE_IDX],sizeClass[SUBPAGE_IDX],
+                    sizeClass[LOG2_DELTA_LOOKUP_IDX],sizeOf(sizeClass,directMemoryCacheAlignment));
+        }
+        int a=0;
     }
 
     //calculate size class
@@ -195,25 +206,25 @@ abstract class SizeClasses implements SizeClassesMetric {
             int pageSize = 1 << pageShifts;
             int size = calculateSize(log2Group, nDelta, log2Delta);
 
-            isMultiPageSize = size == size / pageSize * pageSize? yes : no;
+            isMultiPageSize = size == size / pageSize * pageSize ? yes : no;
         }
 
-        int log2Ndelta = nDelta == 0? 0 : log2(nDelta);
+        int log2Ndelta = nDelta == 0 ? 0 : log2(nDelta);
 
-        byte remove = 1 << log2Ndelta < nDelta? yes : no;
+        byte remove = 1 << log2Ndelta < nDelta ? yes : no;
 
-        int log2Size = log2Delta + log2Ndelta == log2Group? log2Group + 1 : log2Group;
+        int log2Size = log2Delta + log2Ndelta == log2Group ? log2Group + 1 : log2Group;
         if (log2Size == log2Group) {
             remove = yes;
         }
 
-        short isSubpage = log2Size < pageShifts + LOG2_SIZE_CLASS_GROUP? yes : no;
+        short isSubpage = log2Size < pageShifts + LOG2_SIZE_CLASS_GROUP ? yes : no;
 
         int log2DeltaLookup = log2Size < LOG2_MAX_LOOKUP_SIZE ||
-                              log2Size == LOG2_MAX_LOOKUP_SIZE && remove == no
+                log2Size == LOG2_MAX_LOOKUP_SIZE && remove == no
                 ? log2Delta : no;
 
-        return new short[] {
+        return new short[]{
                 (short) index, (short) log2Group, (short) log2Delta,
                 (short) nDelta, isMultiPageSize, isSubpage, (short) log2DeltaLookup
         };
@@ -283,10 +294,10 @@ abstract class SizeClasses implements SizeClassesMetric {
         int group = sizeIdx >> LOG2_SIZE_CLASS_GROUP;
         int mod = sizeIdx & (1 << LOG2_SIZE_CLASS_GROUP) - 1;
 
-        int groupSize = group == 0? 0 :
+        int groupSize = group == 0 ? 0 :
                 1 << LOG2_QUANTUM + LOG2_SIZE_CLASS_GROUP - 1 << group;
 
-        int shift = group == 0? 1 : group;
+        int shift = group == 0 ? 1 : group;
         int lgDelta = shift + LOG2_QUANTUM - 1;
         int modSize = mod + 1 << lgDelta;
 
@@ -303,10 +314,10 @@ abstract class SizeClasses implements SizeClassesMetric {
         int group = pageIdx >> LOG2_SIZE_CLASS_GROUP;
         int mod = pageIdx & (1 << LOG2_SIZE_CLASS_GROUP) - 1;
 
-        long groupSize = group == 0? 0 :
+        long groupSize = group == 0 ? 0 :
                 1L << pageShifts + LOG2_SIZE_CLASS_GROUP - 1 << group;
 
-        int shift = group == 0? 1 : group;
+        int shift = group == 0 ? 1 : group;
         int log2Delta = shift + pageShifts - 1;
         int modSize = mod + 1 << log2Delta;
 
@@ -340,7 +351,7 @@ abstract class SizeClasses implements SizeClassesMetric {
 
         int deltaInverseMask = -1 << log2Delta;
         int mod = (size - 1 & deltaInverseMask) >> log2Delta &
-                  (1 << LOG2_SIZE_CLASS_GROUP) - 1;
+                (1 << LOG2_SIZE_CLASS_GROUP) - 1;
 
         return group + mod;
     }
@@ -355,6 +366,7 @@ abstract class SizeClasses implements SizeClassesMetric {
         return pages2pageIdxCompute(pages, true);
     }
 
+    // 将需要的页面数转换为sizeIdx索引
     private int pages2pageIdxCompute(int pages, boolean floor) {
         int pageSize = pages << pageShifts;
         if (pageSize > chunkSize) {
@@ -368,12 +380,12 @@ abstract class SizeClasses implements SizeClassesMetric {
 
         int group = shift << LOG2_SIZE_CLASS_GROUP;
 
-        int log2Delta = x < LOG2_SIZE_CLASS_GROUP + pageShifts + 1?
+        int log2Delta = x < LOG2_SIZE_CLASS_GROUP + pageShifts + 1 ?
                 pageShifts : x - LOG2_SIZE_CLASS_GROUP - 1;
 
         int deltaInverseMask = -1 << log2Delta;
         int mod = (pageSize - 1 & deltaInverseMask) >> log2Delta &
-                  (1 << LOG2_SIZE_CLASS_GROUP) - 1;
+                (1 << LOG2_SIZE_CLASS_GROUP) - 1;
 
         int pageIdx = group + mod;
 
@@ -390,7 +402,7 @@ abstract class SizeClasses implements SizeClassesMetric {
             return size;
         }
         int delta = size & directMemoryCacheAlignment - 1;
-        return delta == 0? size : size + directMemoryCacheAlignment - delta;
+        return delta == 0 ? size : size + directMemoryCacheAlignment - delta;
     }
 
     @Override

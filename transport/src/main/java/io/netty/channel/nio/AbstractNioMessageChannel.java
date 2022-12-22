@@ -60,14 +60,16 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
     }
 
     private final class NioMessageUnsafe extends AbstractNioUnsafe {
-
+        // 保存新连接
         private final List<Object> readBuf = new ArrayList<Object>();
 
+        // NioServerSocketChannel的NioMessageUnsafe#read()用于接受新连接
         @Override
         public void read() {
             assert eventLoop().inEventLoop();
             final ChannelConfig config = config();
             final ChannelPipeline pipeline = pipeline();
+            // 获得 RecvByteBufAllocator.Handle 对象并重置
             final RecvByteBufAllocator.Handle allocHandle = unsafe().recvBufAllocHandle();
             allocHandle.reset(config);
 
@@ -76,29 +78,34 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
             try {
                 try {
                     do {
-                        int localRead = doReadMessages(readBuf);
-                        if (localRead == 0) {
+                        // 1.通过ServerSocketChannel#accept()获取新连接
+                        // 并封装为NioSocketChannel后保存到readBuf中
+                        int localRead = doReadMessages(readBuf);// 默认只读1个新连接
+                        if (localRead == 0) {// 没有新连接
                             break;
                         }
-                        if (localRead < 0) {
+                        if (localRead < 0) {// 读取出错则标记关闭
                             closed = true;
                             break;
                         }
-
+                        // 读取消息数量 + localRead
                         allocHandle.incMessagesRead(localRead);
                     } while (continueReading(allocHandle));
                 } catch (Throwable t) {
                     exception = t;
                 }
 
+                // 2.处理每个新连接
                 int size = readBuf.size();
-                for (int i = 0; i < size; i ++) {
+                for (int i = 0; i < size; i++) {
                     readPending = false;
+                    // 3.发布服务端管道事件pipeline#fireChannelRead()
+                    // 服务端管道中的ServerBootstrapAcceptor处理器，将创建的NioSocketChannel 注册到 workerEventLoop 上
                     pipeline.fireChannelRead(readBuf.get(i));
                 }
                 readBuf.clear();
                 allocHandle.readComplete();
-                pipeline.fireChannelReadComplete();
+                pipeline.fireChannelReadComplete();// 4.发布pipeline#fireChannelReadComplete()事件
 
                 if (exception != null) {
                     closed = closeOnReadError(exception);

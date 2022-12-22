@@ -15,8 +15,6 @@
  */
 package io.netty.util.concurrent;
 
-import static io.netty.util.internal.ObjectUtil.checkPositive;
-
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
@@ -26,24 +24,29 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static io.netty.util.internal.ObjectUtil.checkPositive;
+
 /**
  * Abstract base class for {@link EventExecutorGroup} implementations that handles their tasks with multiple threads at
  * the same time.
  */
 public abstract class MultithreadEventExecutorGroup extends AbstractEventExecutorGroup {
 
-    private final EventExecutor[] children;
-    private final Set<EventExecutor> readonlyChildren;
+    private final EventExecutor[] children;// 类似Reactor组
+    private final Set<EventExecutor> readonlyChildren;// EventExecutor数组的不可修改集合，主要是用来迭代iterator，防止用户修改EventExecutor数组
+    // 已终止的 EventExecutor 数量
     private final AtomicInteger terminatedChildren = new AtomicInteger();
+    // 用于终止 EventExecutor 的异步 Future
     private final Promise<?> terminationFuture = new DefaultPromise(GlobalEventExecutor.INSTANCE);
+    // 选择器：选择哪个EventExecutor，选择方式就是平均分配，即自增序列取余
     private final EventExecutorChooserFactory.EventExecutorChooser chooser;
 
     /**
      * Create a new instance.
      *
-     * @param nThreads          the number of threads that will be used by this instance.
-     * @param threadFactory     the ThreadFactory to use, or {@code null} if the default should be used.
-     * @param args              arguments which will passed to each {@link #newChild(Executor, Object...)} call
+     * @param nThreads      the number of threads that will be used by this instance.
+     * @param threadFactory the ThreadFactory to use, or {@code null} if the default should be used.
+     * @param args          arguments which will passed to each {@link #newChild(Executor, Object...)} call
      */
     protected MultithreadEventExecutorGroup(int nThreads, ThreadFactory threadFactory, Object... args) {
         this(nThreads, threadFactory == null ? null : new ThreadPerTaskExecutor(threadFactory), args);
@@ -52,9 +55,9 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
     /**
      * Create a new instance.
      *
-     * @param nThreads          the number of threads that will be used by this instance.
-     * @param executor          the Executor to use, or {@code null} if the default should be used.
-     * @param args              arguments which will passed to each {@link #newChild(Executor, Object...)} call
+     * @param nThreads the number of threads that will be used by this instance.
+     * @param executor the Executor to use, or {@code null} if the default should be used.
+     * @param args     arguments which will passed to each {@link #newChild(Executor, Object...)} call
      */
     protected MultithreadEventExecutorGroup(int nThreads, Executor executor, Object... args) {
         this(nThreads, executor, DefaultEventExecutorChooserFactory.INSTANCE, args);
@@ -63,22 +66,22 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
     /**
      * Create a new instance.
      *
-     * @param nThreads          the number of threads that will be used by this instance.
-     * @param executor          the Executor to use, or {@code null} if the default should be used.
-     * @param chooserFactory    the {@link EventExecutorChooserFactory} to use.
-     * @param args              arguments which will passed to each {@link #newChild(Executor, Object...)} call
+     * @param nThreads       the number of threads that will be used by this instance.
+     * @param executor       the Executor to use, or {@code null} if the default should be used.
+     * @param chooserFactory the {@link EventExecutorChooserFactory} to use.
+     * @param args           arguments which will passed to each {@link #newChild(Executor, Object...)} call
      */
     protected MultithreadEventExecutorGroup(int nThreads, Executor executor,
                                             EventExecutorChooserFactory chooserFactory, Object... args) {
         checkPositive(nThreads, "nThreads");
-
+        // 1.创建执行器线程池
         if (executor == null) {
             executor = new ThreadPerTaskExecutor(newDefaultThreadFactory());
         }
-
+        // 2.创建EventExecutor数组，默认是NioEventLoop
         children = new EventExecutor[nThreads];
 
-        for (int i = 0; i < nThreads; i ++) {
+        for (int i = 0; i < nThreads; i++) {
             boolean success = false;
             try {
                 children[i] = newChild(executor, args);
@@ -88,11 +91,11 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
                 throw new IllegalStateException("failed to create a child event loop", e);
             } finally {
                 if (!success) {
-                    for (int j = 0; j < i; j ++) {
+                    for (int j = 0; j < i; j++) {
                         children[j].shutdownGracefully();
                     }
 
-                    for (int j = 0; j < i; j ++) {
+                    for (int j = 0; j < i; j++) {
                         EventExecutor e = children[j];
                         try {
                             while (!e.isTerminated()) {
@@ -107,7 +110,7 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
                 }
             }
         }
-
+        // 3.创建EventExecutor选择器
         chooser = chooserFactory.newChooser(children);
 
         final FutureListener<Object> terminationListener = new FutureListener<Object>() {
@@ -119,7 +122,7 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
             }
         };
 
-        for (EventExecutor e: children) {
+        for (EventExecutor e : children) {
             e.terminationFuture().addListener(terminationListener);
         }
 
@@ -153,13 +156,12 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
     /**
      * Create a new EventExecutor which will later then accessible via the {@link #next()}  method. This method will be
      * called for each thread that will serve this {@link MultithreadEventExecutorGroup}.
-     *
      */
     protected abstract EventExecutor newChild(Executor executor, Object... args) throws Exception;
 
     @Override
     public Future<?> shutdownGracefully(long quietPeriod, long timeout, TimeUnit unit) {
-        for (EventExecutor l: children) {
+        for (EventExecutor l : children) {
             l.shutdownGracefully(quietPeriod, timeout, unit);
         }
         return terminationFuture();
@@ -173,14 +175,14 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
     @Override
     @Deprecated
     public void shutdown() {
-        for (EventExecutor l: children) {
+        for (EventExecutor l : children) {
             l.shutdown();
         }
     }
 
     @Override
     public boolean isShuttingDown() {
-        for (EventExecutor l: children) {
+        for (EventExecutor l : children) {
             if (!l.isShuttingDown()) {
                 return false;
             }
@@ -190,7 +192,7 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
 
     @Override
     public boolean isShutdown() {
-        for (EventExecutor l: children) {
+        for (EventExecutor l : children) {
             if (!l.isShutdown()) {
                 return false;
             }
@@ -200,7 +202,7 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
 
     @Override
     public boolean isTerminated() {
-        for (EventExecutor l: children) {
+        for (EventExecutor l : children) {
             if (!l.isTerminated()) {
                 return false;
             }
@@ -212,8 +214,9 @@ public abstract class MultithreadEventExecutorGroup extends AbstractEventExecuto
     public boolean awaitTermination(long timeout, TimeUnit unit)
             throws InterruptedException {
         long deadline = System.nanoTime() + unit.toNanos(timeout);
-        loop: for (EventExecutor l: children) {
-            for (;;) {
+        loop:
+        for (EventExecutor l : children) {
+            for (; ; ) {
                 long timeLeft = deadline - System.nanoTime();
                 if (timeLeft <= 0) {
                     break loop;

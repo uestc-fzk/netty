@@ -26,28 +26,40 @@ import static io.netty.buffer.SizeClasses.LOG2_QUANTUM;
 
 final class PoolSubpage<T> implements PoolSubpageMetric {
 
-    final PoolChunk<T> chunk;
-    final int elemSize;
-    private final int pageShifts;
-    private final int runOffset;
-    private final int runSize;
+    final PoolChunk<T> chunk;// 所属chunk
+    final int elemSize;// 切分的等量小块内存大小，最小16B
+    private final int pageShifts;// 默认13
+    private final int runOffset;// 此subpage所属run的首页page在Chunk的位移
+    private final int runSize;// 所属run的大小
+
+    /**
+     * 位图数组
+     * 每个bit位记录一个elem的使用情况
+     * 因为elemSize最小为16B，即每个bit可能最小表示16B使用情况，则bitmap初始化时如下：
+     * bitmap = new long[runSize >>> 6 + LOG2_QUANTUM]; // 即runSize / 1024
+     * 即初始化位图数组时按最大长度初始化，然后再以bitmapLength来计算真正使用的位图长度
+     * 我觉得有点多余了，完全可以根据具体使用长度初始化位图数组呀
+     */
     private final long[] bitmap;
+    // 位图数组实际使用长度= maxNumElems/64 + (maxNumElems % 64 == 0 ? 0 : 1)
+    private int bitmapLength;
+    private int maxNumElems;// 此run划分的等大小内存块数量 = `runSize / elemSize`
+
+    private int nextAvail;// 下个可使用内存块指针
+    private int numAvail;// 此subpage剩余的可分配等大小内存块
 
     PoolSubpage<T> prev;
     PoolSubpage<T> next;
 
     boolean doNotDestroy;
-    private int maxNumElems;
-    private int bitmapLength;
-    private int nextAvail;
-    private int numAvail;
-
     private final ReentrantLock lock = new ReentrantLock();
 
     // TODO: Test if adding padding helps under contention
     //private long pad0, pad1, pad2, pad3, pad4, pad5, pad6, pad7;
 
-    /** Special constructor that creates a linked list head */
+    /**
+     * Special constructor that creates a linked list head
+     */
     PoolSubpage() {
         chunk = null;
         pageShifts = -1;
@@ -63,21 +75,28 @@ final class PoolSubpage<T> implements PoolSubpageMetric {
         this.runOffset = runOffset;
         this.runSize = runSize;
         this.elemSize = elemSize;
-        bitmap = new long[runSize >>> 6 + LOG2_QUANTUM]; // runSize / 64 / QUANTUM
+        // 1.初始化位图数组
+        // 我觉得这里的初始化完全可以在下面计算使用长度时进行，
+        // 需要多少初始化多少，没必要以runSize/1024方式计算最大长度
+        bitmap = new long[runSize >>> 6 + LOG2_QUANTUM]; // runSize / 64 / QUANTUM(默认4)
 
         doNotDestroy = true;
+        // 2.将此run按照第1次请求的大小均等划分
         if (elemSize != 0) {
+            // 计算elem内存块切分数量
             maxNumElems = numAvail = runSize / elemSize;
             nextAvail = 0;
+            // 计算位图数组实际使用长度
             bitmapLength = maxNumElems >>> 6;
             if ((maxNumElems & 63) != 0) {
-                bitmapLength ++;
+                bitmapLength++;
             }
 
-            for (int i = 0; i < bitmapLength; i ++) {
+            for (int i = 0; i < bitmapLength; i++) {
                 bitmap[i] = 0;
             }
         }
+        // 3.添加到PoolArena是subpage池数组中，这里就是将此subpage插入给定的head节点之后
         addToPool(head);
     }
 
@@ -88,7 +107,7 @@ final class PoolSubpage<T> implements PoolSubpageMetric {
         if (numAvail == 0 || !doNotDestroy) {
             return -1;
         }
-
+        // 1.找到未使用的elem的索引bitmapIdx
         final int bitmapIdx = getNextAvail();
         if (bitmapIdx < 0) {
             removeFromPool(); // Subpage appear to be in an invalid state. Remove to prevent repeated errors.
@@ -96,26 +115,28 @@ final class PoolSubpage<T> implements PoolSubpageMetric {
                     "even though there are supposed to be (numAvail = " + numAvail + ") " +
                     "out of (maxNumElems = " + maxNumElems + ") available indexes.");
         }
+        // 2.标记位图中该elem索引为1，即表示已使用
         int q = bitmapIdx >>> 6;
         int r = bitmapIdx & 63;
         assert (bitmap[q] >>> r & 1) == 0;
         bitmap[q] |= 1L << r;
-
-        if (-- numAvail == 0) {
+        // 3.如果此subpage分配完了就从subPage池子中移除
+        if (--numAvail == 0) {
             removeFromPool();
         }
-
+        // 4.返回此subpage中分配的elem内存块的句柄handle
         return toHandle(bitmapIdx);
     }
 
     /**
      * @return {@code true} if this subpage is in use.
-     *         {@code false} if this subpage is not used by its chunk and thus it's OK to be released.
+     * {@code false} if this subpage is not used by its chunk and thus it's OK to be released.
      */
     boolean free(PoolSubpage<T> head, int bitmapIdx) {
         if (elemSize == 0) {
             return true;
         }
+        // 1.标记位图中该bitmapIdx索引处为0，表示该elem未使用
         int q = bitmapIdx >>> 6;
         int r = bitmapIdx & 63;
         assert (bitmap[q] >>> r & 1) != 0;
@@ -123,7 +144,10 @@ final class PoolSubpage<T> implements PoolSubpageMetric {
 
         setNextAvail(bitmapIdx);
 
-        if (numAvail ++ == 0) {
+        // 2.可使用elem数量numAvail+1
+        if (numAvail++ == 0) {
+            // 如果之前为0，从allocate()方法知道该subpage已经从PoolArena的subpage池子移除，
+            // 此时释放了一个elem，再将其放回池子，供后续内存申请分配
             addToPool(head);
             /* When maxNumElems == 1, the maximum numAvail is also 1.
              * Each of these PoolSubpages will go in here when they do free operation.
@@ -134,16 +158,17 @@ final class PoolSubpage<T> implements PoolSubpageMetric {
             }
         }
 
+        // 3.如果subpage中有elem正在使用则返回true，表示不释放run
         if (numAvail != maxNumElems) {
             return true;
         } else {
-            // Subpage not in use (numAvail == maxNumElems)
+            // 4.此时subpage中所有elem都未使用
+            // 4.1如果此subpage是该内存规格在PoolArena的subpage池子中唯一的subpage则返回true，表示不释放run
             if (prev == next) {
-                // Do not remove if this subpage is the only one left in the pool.
                 return true;
             }
 
-            // Remove this subpage from the pool if there are other subpages left in the pool.
+            // 4.2若有其它相同内存规格的subpage从arena的subpage池子移除，并返回false，释放此subpage的run
             doNotDestroy = false;
             removeFromPool();
             return false;
@@ -178,11 +203,11 @@ final class PoolSubpage<T> implements PoolSubpageMetric {
         }
         return findNextAvail();
     }
-
+    // 从位图中找到未使用的elem索引
     private int findNextAvail() {
         final long[] bitmap = this.bitmap;
         final int bitmapLength = this.bitmapLength;
-        for (int i = 0; i < bitmapLength; i ++) {
+        for (int i = 0; i < bitmapLength; i++) {
             long bits = bitmap[i];
             if (~bits != 0) {
                 return findNextAvail0(i, bits);
@@ -191,11 +216,12 @@ final class PoolSubpage<T> implements PoolSubpageMetric {
         return -1;
     }
 
+    // 找到未使用的elem索引
     private int findNextAvail0(int i, long bits) {
         final int maxNumElems = this.maxNumElems;
         final int baseVal = i << 6;
 
-        for (int j = 0; j < 64; j ++) {
+        for (int j = 0; j < 64; j++) {
             if ((bits & 1) == 0) {
                 int val = baseVal | j;
                 if (val < maxNumElems) {
@@ -212,10 +238,10 @@ final class PoolSubpage<T> implements PoolSubpageMetric {
     private long toHandle(int bitmapIdx) {
         int pages = runSize >> pageShifts;
         return (long) runOffset << RUN_OFFSET_SHIFT
-               | (long) pages << SIZE_SHIFT
-               | 1L << IS_USED_SHIFT
-               | 1L << IS_SUBPAGE_SHIFT
-               | bitmapIdx;
+                | (long) pages << SIZE_SHIFT
+                | 1L << IS_USED_SHIFT
+                | 1L << IS_SUBPAGE_SHIFT
+                | bitmapIdx;
     }
 
     @Override

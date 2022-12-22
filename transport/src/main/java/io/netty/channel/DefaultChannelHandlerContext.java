@@ -16,7 +16,10 @@
 package io.netty.channel;
 
 import io.netty.util.concurrent.EventExecutor;
-
+/**
+ * ChannelPipeline中的自定义处理器是以此类进行链式组织
+ * 不同于HeadContext/TailContext它们自身作为ChannelHandler，此类是内嵌一个handler
+ */
 final class DefaultChannelHandlerContext extends AbstractChannelHandlerContext {
 
     private final ChannelHandler handler;

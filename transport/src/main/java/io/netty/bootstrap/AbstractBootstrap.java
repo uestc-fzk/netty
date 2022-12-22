@@ -269,6 +269,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     }
 
     private ChannelFuture doBind(final SocketAddress localAddress) {
+        // 1.创建Channel并注册到EventLoop中
         final ChannelFuture regFuture = initAndRegister();
         final Channel channel = regFuture.channel();
         if (regFuture.cause() != null) {
@@ -296,6 +297,7 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
                         // See https://github.com/netty/netty/issues/2586
                         promise.registered();
 
+                        // 2.执行channel的端口绑定逻辑
                         doBind0(regFuture, channel, localAddress, promise);
                     }
                 }
@@ -307,7 +309,9 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     final ChannelFuture initAndRegister() {
         Channel channel = null;
         try {
+            // 1.根据传入的Channel类，反射创建对象
             channel = channelFactory.newChannel();
+            // 2.初始化Channel对象
             init(channel);
         } catch (Throwable t) {
             if (channel != null) {
@@ -319,7 +323,8 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
             // as the Channel is not registered yet we need to force the usage of the GlobalEventExecutor
             return new DefaultChannelPromise(new FailedChannel(), GlobalEventExecutor.INSTANCE).setFailure(t);
         }
-
+        // 3.注册Channel到EventLoopGroup中
+        // 在方法内部会分配一个EventLoop对象并将channel注册到其上
         ChannelFuture regFuture = config().group().register(channel);
         if (regFuture.cause() != null) {
             if (channel.isRegistered()) {

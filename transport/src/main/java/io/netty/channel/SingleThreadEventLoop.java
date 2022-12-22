@@ -30,13 +30,23 @@ import java.util.concurrent.ThreadFactory;
 
 /**
  * Abstract base class for {@link EventLoop}s that execute all its submitted tasks in a single thread.
- *
  */
 public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor implements EventLoop {
 
     protected static final int DEFAULT_MAX_PENDING_TASKS = Math.max(16,
             SystemPropertyUtil.getInt("io.netty.eventLoop.maxPendingTasks", Integer.MAX_VALUE));
-
+    /**
+     * 尾部任务队列，执行在 {@link #SingleThreadEventExecutor#taskQueue} 之后
+     * <p>
+     * Commits
+     * * [Ability to run a task at the end of an eventloop iteration.](https://github.com/netty/netty/pull/5513)
+     * <p>
+     * Issues
+     * * [Auto-flush for channels. (`ChannelHandler` implementation)](https://github.com/netty/netty/pull/5716)
+     * * [Consider removing executeAfterEventLoopIteration](https://github.com/netty/netty/issues/7833)
+     * <p>
+     * 未来会移除该队列，前提是实现了 Channel 的 auto flush 功能。按照最后一个 issue 的讨论
+     */
     private final Queue<Runnable> tailTasks;
 
     protected SingleThreadEventLoop(EventLoopGroup parent, ThreadFactory threadFactory, boolean addTaskWakesUp) {
@@ -80,9 +90,13 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
 
     @Override
     public ChannelFuture register(Channel channel) {
+        // 通过这个 DefaultChannelPromise 对象，我们就能实现对异步注册过程的监听。
         return register(new DefaultChannelPromise(channel, this));
     }
 
+    /**
+     * 这里会调用{@link AbstractChannel.AbstractUnsafe#register(EventLoop, ChannelPromise)} 将Channel注册到该EventLoop的Selector上
+     */
     @Override
     public ChannelFuture register(final ChannelPromise promise) {
         ObjectUtil.checkNotNull(promise, "promise");
@@ -124,7 +138,6 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
      * Removes a task that was added previously via {@link #executeAfterEventLoopIteration(Runnable)}.
      *
      * @param task to be removed.
-     *
      * @return {@code true} if the task was removed as a result of this call.
      */
     @UnstableApi
@@ -159,9 +172,9 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
 
     /**
      * @return read-only iterator of active {@link Channel}s registered with this {@link EventLoop}.
-     *         The returned value is not guaranteed to be exact accurate and
-     *         should be viewed as a best effort. This method is expected to be called from within
-     *         event loop.
+     * The returned value is not guaranteed to be exact accurate and
+     * should be viewed as a best effort. This method is expected to be called from within
+     * event loop.
      * @throws UnsupportedOperationException if operation is not supported by implementation.
      */
     @UnstableApi

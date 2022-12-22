@@ -18,22 +18,22 @@ package io.netty.buffer;
 
 import io.netty.util.internal.StringUtil;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
-import static java.lang.Math.*;
-
-import java.nio.ByteBuffer;
+import static java.lang.Math.max;
+import static java.lang.Math.min;
 
 final class PoolChunkList<T> implements PoolChunkListMetric {
     private static final Iterator<PoolChunkMetric> EMPTY_METRICS = Collections.<PoolChunkMetric>emptyList().iterator();
-    private final PoolArena<T> arena;
+    private final PoolArena<T> arena;// 所属Arena
     private final PoolChunkList<T> nextList;
     private final int minUsage;
     private final int maxUsage;
-    private final int maxCapacity;
+    private final int maxCapacity;// 此Chunk最大容量，默认4MB
     private PoolChunk<T> head;
     private final int freeMinThreshold;
     private final int freeMaxThreshold;
@@ -106,7 +106,7 @@ final class PoolChunkList<T> implements PoolChunkListMetric {
 
         for (PoolChunk<T> cur = head; cur != null; cur = cur.next) {
             if (cur.allocate(buf, reqCapacity, sizeIdx, threadCache)) {
-                if (cur.freeBytes <= freeMinThreshold) {
+                if (cur.freeBytes <= freeMinThreshold) {// 此Chunk剩余容量少于阈值，则放入下个ChunkList中
                     remove(cur);
                     nextList.add(cur);
                 }
