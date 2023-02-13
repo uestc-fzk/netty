@@ -15,8 +15,6 @@
  */
 package io.netty.handler.codec.http;
 
-import static io.netty.util.internal.ObjectUtil.checkPositive;
-
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
@@ -29,6 +27,8 @@ import io.netty.util.ByteProcessor;
 import io.netty.util.internal.AppendableCharSequence;
 
 import java.util.List;
+
+import static io.netty.util.internal.ObjectUtil.checkPositive;
 
 /**
  * Decodes {@link ByteBuf}s into {@link HttpMessage}s and
@@ -259,6 +259,7 @@ public abstract class HttpObjectDecoder extends ByteToMessageDecoder {
         case SKIP_CONTROL_CHARS:
             // Fall-through
         case READ_INITIAL: try {
+            // 解析请求行
             AppendableCharSequence line = lineParser.parse(buffer);
             if (line == null) {
                 return;
@@ -270,14 +271,16 @@ public abstract class HttpObjectDecoder extends ByteToMessageDecoder {
                 return;
             }
 
+            // 将method uri version传入创建DefaultHttpRequest
             message = createMessage(initialLine);
-            currentState = State.READ_HEADER;
+            currentState = State.READ_HEADER;// 设置接下来读header
             // fall-through
         } catch (Exception e) {
             out.add(invalidMessage(buffer, e));
             return;
         }
         case READ_HEADER: try {
+            // 解析请求头，content-length的有无会返回不同的读取状态
             State nextState = readHeaders(buffer);
             if (nextState == null) {
                 return;

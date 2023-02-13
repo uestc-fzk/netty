@@ -47,7 +47,7 @@ public class HttpHelloWorldServerHandler extends SimpleChannelInboundHandler<Htt
         if (msg instanceof HttpRequest) {
             HttpRequest req = (HttpRequest) msg;
 
-            System.out.printf("收到客户端：%s 的HTTP请求\n", ctx.channel().remoteAddress());
+            System.out.printf("收到客户端：%s 的%s请求 %s\n", ctx.channel().remoteAddress(),req.method(),req.uri());
             if("/favicon.ico".equals(req.uri())){
                 System.out.println("请求了favicon.ico");
             }
