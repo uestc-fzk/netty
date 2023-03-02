@@ -105,7 +105,8 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
                 }
                 readBuf.clear();
                 allocHandle.readComplete();
-                pipeline.fireChannelReadComplete();// 4.发布pipeline#fireChannelReadComplete()事件
+                // 4.发布pipeline#fireChannelReadComplete()事件
+                pipeline.fireChannelReadComplete();
 
                 if (exception != null) {
                     closed = closeOnReadError(exception);

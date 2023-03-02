@@ -140,8 +140,11 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
                 return;
             }
             final ChannelPipeline pipeline = pipeline();
-            // 1.获得并重置 RecvByteBufAllocator.Handle 对象
-            final ByteBufAllocator allocator = config.getAllocator();
+            // 1.获得缓冲区分配器和预测器
+            // 1.1 获取ByteBuf分配器
+            final ByteBufAllocator allocator = config.getAllocator();// 默认是PooledByteBufferAllocator
+            // 默认是AdaptiveRecvByteBufAllocator: 动态接收缓冲区分配器
+            // 1.2 从unsafe获取绑定的 缓冲区预测处理器，第1次调用没有则新建
             final RecvByteBufAllocator.Handle allocHandle = recvBufAllocHandle();
             allocHandle.reset(config);
 
@@ -149,17 +152,16 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
             boolean close = false;// 是否关闭连接
             try {
                 do {
-                    // 2.申请 ByteBuf 对象
+                    // 2.缓冲区预测处理器确定此次接收缓冲区ByteBuf
                     byteBuf = allocHandle.allocate(allocator);
-                    // 3.读取数据到ByteBuf
-                    // 设置最后读取字节数
-                    allocHandle.lastBytesRead(doReadBytes(byteBuf));
-                    // 没读取到数据则释放ByteBuf对象并关闭连接
+                    // 3.从SocketChannel读取数据到ByteBuf并设置此次读取字节数
+                    allocHandle.lastBytesRead(doReadBytes(byteBuf));// 若此次读取填满缓冲区会调用record方法扩容
+                    // 3.1 没读取到数据说明读完了或对端关闭连接
                     if (allocHandle.lastBytesRead() <= 0) {
-                        // nothing was read. release the buffer.
+                        // 3.2 释放缓存区，即放回PooledByteBufferAllocator
                         byteBuf.release();
                         byteBuf = null;
-                        // 如果读取字节数小于0，说明对端已关闭连接
+                        // 3.3 如果读取字节数为-1，说明对端已关闭连接，收到了EOF
                         close = allocHandle.lastBytesRead() < 0;
                         if (close) {
                             // There is nothing left to read as we received an EOF.
@@ -173,12 +175,13 @@ public abstract class AbstractNioByteChannel extends AbstractNioChannel {
                     // 4.发布pipeline#fireChannelRead(byteBuf)事件
                     pipeline.fireChannelRead(byteBuf);
                     byteBuf = null;
-                } while (allocHandle.continueReading());
+                } while (allocHandle.continueReading());// 此次读取填满缓冲区则继续循环读取
 
+                // 5.缓冲区预测处理器 readComplete回调，调用record方法以此次IO事件读取的所有字节数来调整预测缓冲区容量
                 allocHandle.readComplete();
-                // 5.发布pipeline#fireChannelReadComplete()
+                // 6.发布pipeline#fireChannelReadComplete()
                 pipeline.fireChannelReadComplete();
-                // 6.如果读取字节数小于0，说明对端已关闭连接，此时关闭Channel
+                // 7.如果读取字节数为-1，说明对端已关闭连接，此时关闭Channel
                 if (close) {
                     closeOnRead(pipeline);
                 }

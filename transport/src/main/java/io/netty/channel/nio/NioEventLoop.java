@@ -740,11 +740,11 @@ public final class NioEventLoop extends SingleThreadEventLoop {
 
             final Object a = k.attachment();
 
-            // 处理Channel的就绪IO事件
+            // 1.处理Channel的就绪IO事件
             if (a instanceof AbstractNioChannel) {
                 processSelectedKey(k, (AbstractNioChannel) a);
             }
-            // 使用 NioTask 处理一个 Channel 就绪的 IO 事件
+            // 2.如果是用户自己注册的Channel，则交由用户程序NioTask处理就绪的 IO 事件
             else {
                 @SuppressWarnings("unchecked")
                 NioTask<SelectableChannel> task = (NioTask<SelectableChannel>) a;
