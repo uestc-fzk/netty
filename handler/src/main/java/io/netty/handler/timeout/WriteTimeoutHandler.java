@@ -128,13 +128,15 @@ public class WriteTimeoutHandler extends ChannelOutboundHandlerAdapter {
     }
 
     private void scheduleTimeout(final ChannelHandlerContext ctx, final ChannelPromise promise) {
-        // Schedule a timeout.
+        // 添加定时任务
         final WriteTimeoutTask task = new WriteTimeoutTask(ctx, promise);
         task.scheduledFuture = ctx.executor().schedule(task, timeoutNanos, TimeUnit.NANOSECONDS);
-
+        // 任务还没被调度完成, 理论上不至于这么快就调度完成吧?
         if (!task.scheduledFuture.isDone()) {
+            // 加入链表末尾
             addWriteTimeoutTask(task);
 
+            // 将检测超时任务作为监听器添加到该promise，若其消息发送完成, 将取消此检测超时任务
             // Cancel the scheduled timeout if the flush promise is complete.
             promise.addListener(task);
         }
@@ -211,6 +213,7 @@ public class WriteTimeoutHandler extends ChannelOutboundHandlerAdapter {
                     ctx.fireExceptionCaught(t);
                 }
             }
+            // 从链表中移除此任务
             removeWriteTimeoutTask(this);
         }
 

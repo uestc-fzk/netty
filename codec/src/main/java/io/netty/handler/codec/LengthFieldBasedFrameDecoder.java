@@ -15,15 +15,13 @@
  */
 package io.netty.handler.codec;
 
-import static io.netty.util.internal.ObjectUtil.checkNotNull;
-import static io.netty.util.internal.ObjectUtil.checkPositive;
-import static io.netty.util.internal.ObjectUtil.checkPositiveOrZero;
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandlerContext;
 
 import java.nio.ByteOrder;
 import java.util.List;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.channel.ChannelHandlerContext;
+import static io.netty.util.internal.ObjectUtil.*;
 
 /**
  * A decoder that splits the received {@link ByteBuf}s dynamically by the
@@ -402,10 +400,12 @@ public class LengthFieldBasedFrameDecoder extends ByteToMessageDecoder {
                 discardingTooLongFrame(in);
             }
 
+            // 长度字段还未出现，稍后等到下个ByteBuf到来再解析
             if (in.readableBytes() < lengthFieldEndOffset) {
                 return null;
             }
 
+            // 获取长度字段的内容，即消息帧长度
             int actualLengthFieldOffset = in.readerIndex() + lengthFieldOffset;
             frameLength = getUnadjustedFrameLength(in, actualLengthFieldOffset, lengthFieldLength, byteOrder);
 
@@ -418,26 +418,28 @@ public class LengthFieldBasedFrameDecoder extends ByteToMessageDecoder {
             if (frameLength < lengthFieldEndOffset) {
                 failOnFrameLengthLessThanLengthFieldEndOffset(in, frameLength, lengthFieldEndOffset);
             }
-
+            // 如果帧长度超过帧最大限制，进入discard模式，丢弃此帧内容重新解析下一帧
             if (frameLength > maxFrameLength) {
                 exceededFrameLength(in, frameLength);
                 return null;
             }
             // never overflows because it's less than maxFrameLength
-            frameLengthInt = (int) frameLength;
+            frameLengthInt = (int) frameLength;// 解析出的帧长度
         }
+        // 消息内容不足一个帧，等待下个ByteBuf到来再解析
         if (in.readableBytes() < frameLengthInt) { // frameLengthInt exist , just check buf
             return null;
         }
         if (initialBytesToStrip > frameLengthInt) {
             failOnFrameLengthLessThanInitialBytesToStrip(in, frameLength, initialBytesToStrip);
         }
+        // 跳过指定数量的初始字节
         in.skipBytes(initialBytesToStrip);
 
         // extract frame
         int readerIndex = in.readerIndex();
         int actualFrameLength = frameLengthInt - initialBytesToStrip;
-        ByteBuf frame = extractFrame(ctx, in, readerIndex, actualFrameLength);
+        ByteBuf frame = extractFrame(ctx, in, readerIndex, actualFrameLength);// 从累加缓冲区ByteBuf中切片即可
         in.readerIndex(readerIndex + actualFrameLength);
         frameLengthInt = -1; // start processing the next frame
         return frame;

@@ -15,23 +15,17 @@
  */
 package io.netty.handler.traffic;
 
-import static io.netty.util.internal.ObjectUtil.checkPositive;
-
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufHolder;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelDuplexHandler;
-import io.netty.channel.ChannelConfig;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelOutboundBuffer;
-import io.netty.channel.ChannelPromise;
-import io.netty.channel.FileRegion;
+import io.netty.channel.*;
 import io.netty.util.Attribute;
 import io.netty.util.AttributeKey;
 import io.netty.util.internal.logging.InternalLogger;
 import io.netty.util.internal.logging.InternalLoggerFactory;
 
 import java.util.concurrent.TimeUnit;
+
+import static io.netty.util.internal.ObjectUtil.checkPositive;
 
 /**
  * <p>AbstractTrafficShapingHandler allows to limit the global bandwidth
@@ -468,12 +462,14 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
 
     @Override
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) throws Exception {
+        // 1.计算消息字节数，即流量
         long size = calculateSize(msg);
         long now = TrafficCounter.milliSecondFromNano();
         if (size > 0) {
-            // compute the number of ms to wait before reopening the channel
+            // 2.根据消息大小(即流量)和给定的读速度readLimit计算等待时间
             long wait = trafficCounter.readTimeToWait(size, readLimit, maxTime, now);
             wait = checkWaitReadTime(ctx, wait, now);
+            // 3.如果等待时间大于最小值10ms，则暂时关闭channel的自动读取并设置定时任务在计算的等待时间之后再打开
             if (wait >= MINIMAL_WAIT) { // At least 10ms seems a minimal
                 // time in order to try to limit the traffic
                 // Only AutoRead AND HandlerActive True means Context Active
@@ -483,6 +479,7 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
                     logger.debug("Read suspend: " + wait + ':' + config.isAutoRead() + ':'
                             + isHandlerActive(ctx));
                 }
+                // 如果是自动读取则暂时关闭并添加定时任务来恢复自动读取
                 if (config.isAutoRead() && isHandlerActive(ctx)) {
                     config.setAutoRead(false);
                     channel.attr(READ_SUSPENDED).set(true);
@@ -502,7 +499,9 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
                 }
             }
         }
+        // 4.通知处理完成, 由子类实现
         informReadOperation(ctx, now);
+        // 5. 将消息向后传递
         ctx.fireChannelRead(msg);
     }
 
@@ -551,21 +550,23 @@ public abstract class AbstractTrafficShapingHandler extends ChannelDuplexHandler
     @Override
     public void write(final ChannelHandlerContext ctx, final Object msg, final ChannelPromise promise)
             throws Exception {
+        // 1.计算待发送消息字节数，即流量
         long size = calculateSize(msg);
         long now = TrafficCounter.milliSecondFromNano();
         if (size > 0) {
-            // compute the number of ms to wait before continue with the channel
+            // 2.根据消息大小(即流量)和给定写速度限制writeLimit计算等待时间
             long wait = trafficCounter.writeTimeToWait(size, writeLimit, maxTime, now);
             if (wait >= MINIMAL_WAIT) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("Write suspend: " + wait + ':' + ctx.channel().config().isAutoRead() + ':'
                             + isHandlerActive(ctx));
                 }
+                // 3.将消息暂存到缓存队列指定时间后再发送
                 submitWrite(ctx, msg, size, wait, now, promise);
                 return;
             }
         }
-        // to maintain order of write
+        // 4.立刻发送消息
         submitWrite(ctx, msg, size, 0, now, promise);
     }
 

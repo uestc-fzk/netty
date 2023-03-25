@@ -36,17 +36,17 @@ import java.util.List;
 public class LineBasedFrameDecoder extends ByteToMessageDecoder {
 
     /** Maximum length of a frame we're willing to decode.  */
-    private final int maxLength;
+    private final int maxLength;// 设定的消息帧最大长度
     /** Whether or not to throw an exception as soon as we exceed maxLength. */
-    private final boolean failFast;
-    private final boolean stripDelimiter;
+    private final boolean failFast;// 快速失败，超过帧最大长度是否立刻抛异常，默认false
+    private final boolean stripDelimiter;// 是否去掉分隔符，默认去掉
 
     /** True if we're discarding input because we're already over maxLength.  */
     private boolean discarding;
     private int discardedBytes;
 
     /** Last scan position. */
-    private int offset;
+    private int offset;// 最后扫描位置
 
     /**
      * Creates a new decoder.

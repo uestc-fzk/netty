@@ -181,16 +181,19 @@ public class ChannelTrafficShapingHandler extends AbstractTrafficShapingHandler 
         final ToSend newToSend;
         // write order control
         synchronized (this) {
+            // 1.消息延时为0则立即发送
             if (delay == 0 && messagesQueue.isEmpty()) {
                 trafficCounter.bytesRealWriteFlowControl(size);
                 ctx.write(msg, promise);
                 return;
             }
+            // 2.将消息暂存到队列中
             newToSend = new ToSend(delay + now, msg, promise);
             messagesQueue.addLast(newToSend);
             queueSize += size;
             checkWriteSuspend(ctx, delay, queueSize);
         }
+        // 3.定时任务发送已经到期的消息
         final long futureNow = newToSend.relativeTimeAction;
         ctx.executor().schedule(new Runnable() {
             @Override
